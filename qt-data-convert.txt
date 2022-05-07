@@ -1,0 +1,82 @@
+qt 整理解析QByteArray,QString,unsigned char之间的恩怨情仇
+
+
+QString datastr = msg.mid(24,8);
+
+
+//QString转数字=> packetLen=str.toUInt(&ok,16);
+//QByteArray存放的就是二进制数据,注意下=> QByteArray info; int packetLen = (unsigned char)info.at(2);
+//左移(扩大)=> packetLen<<=8;
+//数字转其他进制并输出字符串=>
+//int n = 63;QByteArray::number(n); // returns "63"
+//int n = 63;QByteArray::number(n, 16); // returns "3f"
+//int n = 63;QByteArray::number(n, 16).toUpper(); // returns "3F"
+//int n = 63;QByteArray::number(n, 2); // returns "111111"
+//int n = 63;QByteArray::number(n, 8); // returns "77"
+/*
+   表示值为 123456.78，则传送的数据为 N1=78H+33H N2=56H+33H N3=34H+33H N4=12H+33H
+   QByteArray::number(datastr.mid(2,2).toUInt(&ok,16)-0x33);
+   序号:12 34 56 78
+   原始:33 CB CC 3C
+   解析:00 98 99 09
+   组装:09 99 98 00
+*/
+
+bool ok;
+QString resultstr = "";
+resultstr += QByteArray::number((datastr.mid(6,2).toUInt(&ok,16)-0x33),16);//09
+resultstr += QByteArray::number((datastr.mid(4,2).toUInt(&ok,16)-0x33),16);//0999
+resultstr += QByteArray::number((datastr.mid(2,2).toUInt(&ok,16)-0x33),16);//099998
+
+text.append(QString("result: "+resultstr));　　　　　　  
+QString meterNumber = "0000000100000001";
+char bcd[8];bool ok;
+for(int i=0;i<8;i++){bcd[i] = meterNumber.mid(2*i,2).toUInt(&ok,16);}
+QString te1 = QByteArray((char*)bcd,8).toHex();//te1=>0000000100000001
+QString tem = QByteArray((char*)buf_OUT,retLen).toHex();
+//buf_out   0x68,0x00,0x00,0x16
+//tem       68000016
+
+
+
+// c demo
+//info->hex data eg: 68,00,00,00,00,99,99,68,51,08,53,d3,33,cc,cc,3c,33,33,eb,16
+int parsingDirectReading(unsigned char *info, char infolen)
+{
+    //check 0x68 0x16
+    if(*(info+0)!=0x68) return -1;
+    if(*(info+infolen-1)!=0x16) return -1;
+    //check cs byte
+    unsigned char cs = 0;
+    for(char i=0;i<infolen-2;i++)cs=*(info+i)+cs;
+    if(cs!=*(info+infolen-2)) return -2;
+
+    //parse data//((tem >> 4) & 0x0F) * 10 + (tem & 0x0F);
+    unsigned char result[4];
+    for(char i=0;i<4;i++){
+        unsigned char tem = *(info+15-i)-0x33;
+        *(result+i) = ((tem >> 4) & 0x0F) * 10 + (tem & 0x0F);
+    }
+    return result[0]*10000 + result[1]*100 + result[2];
+}
+
+
+
+// c - demo - test
+//test//QString msg = 6800000000999968510853d333cccc3c3333eb16//20个
+bool ok1;
+QString te;
+unsigned char arr01[20];
+for(int i=0;i<20;i++){
+    arr01[i]=(unsigned char)msg.mid(i*2,2).toUInt(&ok1,16);
+}
+unsigned char arr02[4];
+int result = parsingDirectReading(arr01,20);
+myDebugMsg("test start===================");
+myDebugMsg("before=>"+msg);
+for(int i=0;i<20;i++){
+    te += QByteArray::number(arr01[i],16);
+}
+myDebugMsg("after=>"+te);
+te = QByteArray::number(result);myDebugMsg("result=>"+te);
+myDebugMsg("test end====================");
